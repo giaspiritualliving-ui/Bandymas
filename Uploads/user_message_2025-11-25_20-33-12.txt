@@ -1,0 +1,749 @@
+✅Super, turim aiškų vaizdą 🙌
+Variantas C (mygtukai + laisvas tekstas) ir daug kalbų, su prioritetu LT / RU / EN / UA.
+Žemiau sudėsiu taip, kad:
+tu galėtum suprasti, kaip botas veiks,
+
+
+o jeigu prireiks – šitą žinutę galėsi tiesiog persiųsti programuotojui / freelancer’iui kaip specifikaciją.
+
+
+
+1️⃣ Kaip tavo botas veiks (žmogui suprantama versija)
+Telegram botas (pavadinkim jį, pvz., @WowVideoBot) galės:
+Visi, kas turi prieigą prie boto (0 € zona):
+Be jokių DI sąnaudų, visi galės:
+✂️ Kirpti video pagal laikus (00:10–00:25, 1:05–1:33 ir t. t.)
+
+
+🎧 Ištraukti tik garsą (MP3 / WAV) iš video
+
+
+🌀 Sumažinti triukšmą (basic noise reduction)
+
+
+🔊 Suvienodinti garsumą (normalizacija)
+
+
+🧱 Suspausti video (mažesnis failo dydis)
+
+
+🔁 Keisti formatus (mp4, mov, webm ir pan.)
+
+
+↕️ Pakeisti proporcijas (horizontal → vertical, 16:9 → 9:16 padarant „crop’ą“)
+
+
+🎞 Automatiškai padalinti ilgą video į segmentus kas X sekundžių
+
+
+🤫 Aptikti tylą/pauzes ir pagal jas pjaustyti
+
+
+➕ Sujungti kelis klipus į vieną
+
+
+Visa tai daroma su ffmpeg ir nekainuoja nei cento už DI.
+
+Tu, kaip premium vartotoja (
+@WowFUX
+):
+Tik tau veiks DI dalys (su limitu, kurį paskui galėsit nustatyti):
+📝 Automatiniai subtitrai (LT, RU, EN, UA + kitos kalbos)
+
+
+🌐 Subtitrų vertimas į kitas kalbas
+
+
+🔊 Įgarsinimas kitomis kalbomis su:
+
+
+A – Google AI Studio TTS balsais
+
+
+B – OpenAI TTS balsais
+
+
+C – 11Labs balsais
+
+
+🎭 „Žurnalistinio tyrimo“ tonas – vyrų ir moterų balsai (su emocija, bet ne teatrališka)
+
+
+🎯 Automatiniai highlight’ai / pasiūlymai short’ams iš ~1.5h video
+
+
+📜 Automatiniai reziume / „chapters“ / teminiai skyriai
+
+
+🤖 Komandos tipo:
+
+ „Padaryk 10 shorts su ukrainietišku moters balsu ir lietuviškais subtitrais“
+
+
+Kiti to padaryti negalės – jiems DI bus išjungtas.
+
+2️⃣ Botas iš vidaus – paprasta architektūra
+Projekto struktūra (apytiksliai):
+video-bot/
+  bot.py               # pagrindinis Telegram botą valdantis failas (aiogram)
+  video_tools.py       # ffmpeg funkcijos (nemokamos visiems)
+  ai_tools.py          # DI funkcijų „kabliukai“ (OpenAI, Google, 11Labs) – tik tau
+  config.py            # nustatymai, env kintamieji
+  requirements.txt     # Python bibliotekos
+  Dockerfile           # kad galėtum paleisti Railway
+
+3️⃣ Premium logika – kaip atskirs, kad tu „VIP“
+Labai paprasta taisyklė:
+.env faile saugomas tavo Telegram ID / username.
+
+
+Kiekvienoje „brangesnėje“ funkcijoje tikrinama:
+
+ ar user_id == PREMIUM_USER_ID?
+
+
+Jei taip → leidžiamos DI funkcijos.
+
+
+Jei ne → pasiūloma naudoti tik nemokamas ffmpeg funkcijas.
+
+
+Tai panašu į:
+PREMIUM_USERNAME = "@WowFUX"
+
+def is_premium(user):
+    return user.username and user.username.lower() == PREMIUM_USERNAME.lower()
+
+4️⃣ Pavyzdinis bendra idėja programuotojui (supaprastintas kodas)
+Šitą dalį gali tiesiog persiųsti bet kuriam programuotojui kaip „specą“.
+requirements.txt
+ (pavyzdys)
+aiogram==2.25.1
+python-dotenv==1.0.1
+yt-dlp==2024.03.10
+(plius atskirai reikia ffmpeg serveryje)
+
+config.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+PREMIUM_USERNAME = os.getenv("PREMIUM_USERNAME", "@WowFUX")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+
+# kalbos, su kuriomis dirbam prioritetu
+PRIORITY_LANGS = ["lt", "ru", "en", "uk"]
+
+def is_premium(user):
+    username = (user.username or "").lower()
+    return username == PREMIUM_USERNAME.lower()
+
+video_tools.py
+ – 0 € funkcijos
+import subprocess
+import os
+
+def run_ffmpeg(cmd):
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def extract_audio(input_path, output_path="output_audio.mp3"):
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vn",
+        "-acodec", "mp3",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+
+def cut_clip(input_path, start, end, output_path):
+    duration = end - start
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(start),
+        "-i", input_path,
+        "-t", str(duration),
+        "-c", "copy",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+
+def to_vertical(input_path, output_path):
+    # supaprastintas crop’as į vertikalų 9:16 (rankinis, be DI)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vf", "crop=in_h*9/16:in_h:(in_w-out_w)/2:0,scale=1080:1920",
+        "-c:a", "copy",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+
+def compress_video(input_path, output_path):
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vcodec", "libx264",
+        "-crf", "26",
+        "-preset", "medium",
+        "-acodec", "aac",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+(čia tik kelios iš funkcijų – programme­ruotojas gali išplėsti pagal tavo sąrašą)
+
+ai_tools.py
+ – DI kabliukai (tik tau)
+Čia programuotojas prijungs tikrus API pagal atitinkamą dokumentaciją. Aš duodu tik loginę struktūrą:
+from config import OPENAI_API_KEY, GOOGLE_API_KEY, ELEVENLABS_API_KEY, PRIORITY_LANGS
+import requests
+
+def generate_subtitles(audio_path, lang="lt"):
+    """
+    Čia galima naudoti OpenAI Whisper ar Google STT.
+    """
+    # Pseudokodas – programuotojas užpildo pagal pasirinktą API
+    ...
+
+def translate_subtitles(subs, target_lang="lt"):
+    """
+    Naudoja OpenAI / Gemini teksto vertimui.
+    """
+    ...
+
+def tts_google(text, lang="lt", voice="journalist_male"):
+    """
+    Google AI Studio TTS – programuotojas prijungia per REST API.
+    """
+    ...
+
+def tts_openai(text, lang="lt", voice="journalist_female"):
+    """
+    OpenAI TTS – naudojamas gauti natūralų balsą.
+    """
+    ...
+
+def tts_elevenlabs(text, lang="lt", voice_id="some_voice"):
+    """
+    11Labs – labiausiai žmogiški balsai.
+    """
+    ...
+
+def suggest_highlights(transcript_text, lang="lt"):
+    """
+    DI sugeneruoja laiko intervalus short’ams.
+    Pvz.: gražina sąrašą [(10, 32), (120, 145), ...]
+    """
+    ...
+
+bot.py
+ – idėja, kaip atrodo „mišrus“ variantas (C)
+Apačioje yra /start, mygtukų meniu,
+
+
+Bet taip pat gali tiesiog parašyti tekstu:
+
+ „Padaryk 5 shorts su rusų subtitrais ir ukrainietišku įgarsinimu“
+
+
+(čia supaprastintas gabaliukas)
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+from config import BOT_TOKEN, is_premium
+import video_tools
+import tempfile
+import os
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
+
+@dp.message_handler(commands=["start"])
+async def cmd_start(message: types.Message):
+    text = (
+        "👋 Sveika, čia tavo video botas!\n\n"
+        "🔹 Gali siųsti video failą arba nuorodą.\n"
+        "🔹 Aš moku:\n"
+        "  • karpyti\n"
+        "  • ištraukti audio\n"
+        "  • keisti formatą ir proporcijas\n"
+        "  • segmentuoti video\n"
+        "  • (tau) daryti subtitrus, vertimus ir įgarsinimą\n\n"
+        "Naudok mygtukus arba tiesiog parašyk, ko nori 😉"
+    )
+    await message.answer(text)
+
+# čia būtų Keyboard mygtukai, pvz. pagrindiniam meniu
+
+@dp.message_handler(content_types=[types.ContentType.VIDEO, types.ContentType.DOCUMENT])
+async def handle_video(message: types.Message):
+    user = message.from_user
+    premium = is_premium(user)
+
+    # Atsisiunčiam video į laikiną aplanką
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file = await message.video.get_file() if message.video else await message.document.get_file()
+        file_path = os.path.join(tmpdir, "input.mp4")
+        await bot.download_file(file.file_path, file_path)
+
+        # Čia pagal tai, kokią komandą / režimą pasirinks – bus taikomos ffmpeg/DI funkcijos.
+        await message.answer("✅ Video gautas. Dabar pasirink, ką nori daryti (karpyti, audio, subtitrai ir t. t.).")
+
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
+
+5️⃣ Railway dalis (trumpai)
+Programuotojui arba tau (jei kažkas padės):
+Susikurti Railway paskyrą.
+
+
+Sukurti naują projektą → „Deploy from GitHub“ (arba upload ZIP).
+
+
+Į Variables įdėti:
+
+
+BOT_TOKEN
+
+
+PREMIUM_USERNAME=@WowFUX
+
+
+OPENAI_API_KEY
+
+
+GOOGLE_API_KEY
+
+
+ELEVENLABS_API_KEY
+
+
+Dockerfile arba Procfile nurodo, kaip paleisti bot.py.
+
+
+Prie BotFather jau sukurtam botui įdedi tą patį tokeną.
+
+
+Ir botas veiks 24/7 🚀
+
+6️⃣ Ką tu gali padaryti dabar?
+Kadangi tu pati sakai „čia man kosmosas“, labai realistiški variantai:
+Šitą žinutę gali persiųsti žmogui, kuris truputį „draugauja“ su IT,
+
+ arba
+
+
+įkelti į kokią freelancer’ų platformą kaip pilną aprašą:
+
+ „Man reikia pastatyti Telegram botą pagal šią specifikaciją.“
+
+
+Aš čia tau jau sudėjau:
+aiškią logiką,
+
+
+atskyrimą tarp 0 € funkcijų ir DI,
+
+
+prioritetines kalbas,
+
+
+balsų pasirinkimą (ABC),
+
+
+ir premium tik tau.
+
+
+Jei norėsi, kito žingsnio galim padaryti dar vieną dalyką:
+parašysiu labai trumpą „užduoties tekstą“ freelancer’iui, kurį galėsi copy–paste (LT arba EN).
+
+
+1-video-bot/
+  bot.py               # pagrindinis Telegram botą valdantis failas (aiogram)
+  video_tools.py       # ffmpeg funkcijos (nemokamos visiems)
+  ai_tools.py          # DI funkcijų „kabliukai“ (OpenAI, Google, 11Labs) – tik tau
+  config.py            # nustatymai, env kintamieji
+  requirements.txt     # Python bibliotekos
+  Dockerfile           # kad galėtum paleisti Railway
+
+2-PREMIUM_USERNAME = "@WowFUX"
+
+def is_premium(user):
+    return user.username and user.username.lower() == PREMIUM_USERNAME.lower()
+
+3-aiogram==2.25.1
+python-dotenv==1.0.1
+yt-dlp==2024.03.10
+
+4-import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+PREMIUM_USERNAME = os.getenv("PREMIUM_USERNAME", "@WowFUX")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+
+# kalbos, su kuriomis dirbam prioritetu
+PRIORITY_LANGS = ["lt", "ru", "en", "uk"]
+
+def is_premium(user):
+    username = (user.username or "").lower()
+    return username == PREMIUM_USERNAME.lower()
+
+5-import subprocess
+import os
+
+def run_ffmpeg(cmd):
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def extract_audio(input_path, output_path="output_audio.mp3"):
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vn",
+        "-acodec", "mp3",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+
+def cut_clip(input_path, start, end, output_path):
+    duration = end - start
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(start),
+        "-i", input_path,
+        "-t", str(duration),
+        "-c", "copy",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+
+def to_vertical(input_path, output_path):
+    # supaprastintas crop’as į vertikalų 9:16 (rankinis, be DI)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vf", "crop=in_h*9/16:in_h:(in_w-out_w)/2:0,scale=1080:1920",
+        "-c:a", "copy",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+
+def compress_video(input_path, output_path):
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vcodec", "libx264",
+        "-crf", "26",
+        "-preset", "medium",
+        "-acodec", "aac",
+        output_path
+    ]
+    run_ffmpeg(cmd)
+    return output_path
+
+6-from config import OPENAI_API_KEY, GOOGLE_API_KEY, ELEVENLABS_API_KEY, PRIORITY_LANGS
+import requests
+
+def generate_subtitles(audio_path, lang="lt"):
+    """
+    Čia galima naudoti OpenAI Whisper ar Google STT.
+    """
+    # Pseudokodas – programuotojas užpildo pagal pasirinktą API
+    ...
+
+def translate_subtitles(subs, target_lang="lt"):
+    """
+    Naudoja OpenAI / Gemini teksto vertimui.
+    """
+    ...
+
+def tts_google(text, lang="lt", voice="journalist_male"):
+    """
+    Google AI Studio TTS – programuotojas prijungia per REST API.
+    """
+    ...
+
+def tts_openai(text, lang="lt", voice="journalist_female"):
+    """
+    OpenAI TTS – naudojamas gauti natūralų balsą.
+    """
+    ...
+
+def tts_elevenlabs(text, lang="lt", voice_id="some_voice"):
+    """
+    11Labs – labiausiai žmogiški balsai.
+    """
+    ...
+
+def suggest_highlights(transcript_text, lang="lt"):
+    """
+    DI sugeneruoja laiko intervalus short’ams.
+    Pvz.: gražina sąrašą [(10, 32), (120, 145), ...]
+    """
+    …
+
+7-from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+from config import BOT_TOKEN, is_premium
+import video_tools
+import tempfile
+import os
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
+
+@dp.message_handler(commands=["start"])
+async def cmd_start(message: types.Message):
+    text = (
+        "👋 Sveika, čia tavo video botas!\n\n"
+        "🔹 Gali siųsti video failą arba nuorodą.\n"
+        "🔹 Aš moku:\n"
+        "  • karpyti\n"
+        "  • ištraukti audio\n"
+        "  • keisti formatą ir proporcijas\n"
+        "  • segmentuoti video\n"
+        "  • (tau) daryti subtitrus, vertimus ir įgarsinimą\n\n"
+        "Naudok mygtukus arba tiesiog parašyk, ko nori 😉"
+    )
+    await message.answer(text)
+
+# čia būtų Keyboard mygtukai, pvz. pagrindiniam meniu
+
+@dp.message_handler(content_types=[types.ContentType.VIDEO, types.ContentType.DOCUMENT])
+async def handle_video(message: types.Message):
+    user = message.from_user
+    premium = is_premium(user)
+
+    # Atsisiunčiam video į laikiną aplanką
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file = await message.video.get_file() if message.video else await message.document.get_file()
+        file_path = os.path.join(tmpdir, "input.mp4")
+        await bot.download_file(file.file_path, file_path)
+
+        # Čia pagal tai, kokią komandą / režimą pasirinks – bus taikomos ffmpeg/DI funkcijos.
+        await message.answer("✅ Video gautas. Dabar pasirink, ką nori daryti (karpyti, audio, subtitrai ir t. t.).")
+
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
+ O jeigu aš šią žinutę nusiųsiu DI agentui, jis sugebės man tai organizuoti?
+Trumpas atsakymas: taip, DI agentui tokia žinutė yra AUKSO vertės, bet 👉 ar jis viską padarys iki galo, priklausys nuo to, kokia tai sistema.
+Leisk išskirstyti paprastai.
+
+🔍 1. Nuo ko priklauso, ar DI „sugebės viską sutvarkyti“?
+Yra du tipai „DI agentų“:
+🧠 1) Paprasti pokalbių DI (kaip ChatGPT, Gemini, Claude naršyklėje)
+Jie:
+✅ gali tau parašyti kodą, Dockerfile, Railway instrukcijas, config’us
+
+
+❌ bet negali patys nueiti į Railway, suvesti tokenų, deploy’inti (kaip ir aš – ribojimai)
+
+
+Tokiam agentui tavo žinutė yra puiki specifikacija – jis:
+sudės failus, kodą, struktūrą,
+
+
+parašys step-by-step instrukciją,
+
+
+o tu arba kitas žmogus paspaus tuos mygtukus Railway.
+
+
+
+🤖 2) „Tikri“ agentai su prieiga prie įrankių / repo / devops (AutoDev, devin-ai, ir pan.)
+Jie (priklausomai nuo platformos):
+✅ gali sukurti repo,
+
+
+✅ sukonfigūruoti Docker,
+
+
+✅ paruošti Railway / Render config’ą,
+
+
+✅ net automatiškai daryti deploy, jei platforma leidžia.
+
+
+Bet:
+vis tiek tu turėsi suvesti API raktus (saugumo sumetimais),
+
+
+dažnai bent kartą patvirtinti veiksmus.
+
+
+
+✅ 2. Ar tavo žinutės jau užtenka DI agentui?
+Taip. Tu jau turi:
+aiškų funkcijų padalinimą (0 € visiems, DI tik tau),
+
+
+prioritetines kalbas (LT, RU, EN, UA),
+
+
+pasirinktus TTS tiekėjus (Google AI Studio + OpenAI + 11Labs),
+
+
+premium vartotoją (@WowFUX),
+
+
+norimą sąveiką (variantas C – mygtukai + laisvas tekstas).
+
+
+DI agentui to pilnai pakanka sukonstruoti:
+boto kodą,
+
+
+Dockerfile,
+
+
+Railway deployment’ą,
+
+
+instrukcijas tau.
+
+
+
+💌 3. Paruošiau tau tekstą, kurį gali NUKOPIJUOTI ir nusiųsti bet kuriam DI agentui
+Tiesiog copy–paste 👇
+
+Tekstas DI agentui (LT):
+Noriu Telegram boto, kuris apdoroja video.
+
+Pagrindinė idėja:
+– visi vartotojai gauna NEMOKAMAS ffmpeg funkcijas (0 € zona)
+– tik mano Telegram @WowFUX gauna DI funkcijas (subtitrai, vertimas, įgarsinimas ir t. t.).
+
+Funkcijos VISIEMS (be DI, ffmpeg):
+– karpymas pagal laikus
+– audio išskyrimas į MP3/WAV
+– triukšmo sumažinimas (basic noise reduction)
+– garsumo suvienodinimas (normalizavimas)
+– video suspaudimas (mažesnis failo dydis)
+– formatų keitimas (mp4, mov, webm ir pan.)
+– proporcijų keitimas horizontal → vertical (rankinis crop’as)
+– automatinis padalinimas į segmentus kas X sekundžių
+– tylos / pauzių aptikimas ir pjaustymas pagal jas
+– kelių klipų sujungimas į vieną.
+
+Funkcijos TIK MAN (@WowFUX, premium):
+– automatiniai subtitrai (LT, RU, EN, UA + kitos kalbos)
+– subtitrų vertimas į kitas kalbas
+– įgarsinimas kitomis kalbomis šiomis TTS paslaugomis:
+A) Google AI Studio TTS
+B) OpenAI TTS
+C) 11Labs TTS
+– „žurnalistinio tyrimo“ tono balsai (vyr. ir mot., su emocija)
+– automatiniai highlight’ai / pasiūlymai short’ams iš ~1.5h video
+– automatinės santraukos, chapters, teminės dalys
+– komandos tipo “Padaryk 10 shorts su X subtitrais ir Y įgarsinimu”.
+
+Sąveika:
+– Variantą C: noriu ir komandų / mygtukų, ir natūralaus teksto.
+Pvz. /cut, /audio, /vertical, /subtitles, /translate, /tts, /highlights, /settings + galimybės parašyti laisvu tekstu.
+
+Technika:
+– noriu, kad tai būtų paleista ant Railway (ar panašaus pigiai kainuojančio serverio).
+– reikia Dockerfile, requirements.txt, bot.py ir t. t.
+– DI API raktus (OpenAI, Google, 11Labs) aš pati įvesiu per env kintamuosius.
+– premium logika turi tikrinti mano username @WowFUX ir tik tada leisti DI.
+
+Prašau:
+Sukurk pilną projekto struktūrą (kodą + Dockerfile + config).
+
+
+Parašyk aiškias instrukcijas, kaip man:
+
+ – susikurti Railway projektą
+
+ – įkelti kodą
+
+ – suvesti env kintamuosius
+
+ – prijungti BotFather tokeną
+
+
+Padaryk, kad viskas būtų kuo paprasčiau paleidžiama žmogui, kuris nėra programuotojas.
+
+
+
+Jei nusiųsi tokį tekstą DI agentui (ar žmogui–programuotojui), jie tikrai sugebės tuo remtis ir sutvarkyti.
+Jei nori, kitame žingsnyje galiu:
+parašyti anglišką versiją tam DI agentui,
+
+
+arba padėti suprasti atsakymą, kurį tas agentas tau parašys (išversti / „išžmoninti“). 
+
+
+ТЕКСТ ДЛЯ ИИ АГЕНТА        Tekstas DI agentui (LT):
+Noriu Telegram boto, kuris apdoroja video.
+
+Pagrindinė idėja:
+– visi vartotojai gauna NEMOKAMAS ffmpeg funkcijas (0 € zona)
+– tik mano Telegram @WowFUX gauna DI funkcijas (subtitrai, vertimas, įgarsinimas ir t. t.).
+
+Funkcijos VISIEMS (be DI, ffmpeg):
+– karpymas pagal laikus
+– audio išskyrimas į MP3/WAV
+– triukšmo sumažinimas (basic noise reduction)
+– garsumo suvienodinimas (normalizavimas)
+– video suspaudimas (mažesnis failo dydis)
+– formatų keitimas (mp4, mov, webm ir pan.)
+– proporcijų keitimas horizontal → vertical (rankinis crop’as)
+– automatinis padalinimas į segmentus kas X sekundžių
+– tylos / pauzių aptikimas ir pjaustymas pagal jas
+– kelių klipų sujungimas į vieną.
+
+Funkcijos TIK MAN (@WowFUX, premium):
+– automatiniai subtitrai (LT, RU, EN, UA + kitos kalbos)
+– subtitrų vertimas į kitas kalbas
+– įgarsinimas kitomis kalbomis šiomis TTS paslaugomis:
+A) Google AI Studio TTS
+B) OpenAI TTS
+C) 11Labs TTS
+– „žurnalistinio tyrimo“ tono balsai (vyr. ir mot., su emocija)
+– automatiniai highlight’ai / pasiūlymai short’ams iš ~1.5h video
+– automatinės santraukos, chapters, teminės dalys
+– komandos tipo “Padaryk 10 shorts su X subtitrais ir Y įgarsinimu”.
+
+Sąveika:
+– Variantą C: noriu ir komandų / mygtukų, ir natūralaus teksto.
+Pvz. /cut, /audio, /vertical, /subtitles, /translate, /tts, /highlights, /settings + galimybės parašyti laisvu tekstu.
+
+Technika:
+– noriu, kad tai būtų paleista ant Railway (ar panašaus pigiai kainuojančio serverio).
+– reikia Dockerfile, requirements.txt, bot.py ir t. t.
+– DI API raktus (OpenAI, Google, 11Labs) aš pati įvesiu per env kintamuosius.
+– premium logika turi tikrinti mano username @WowFUX ir tik tada leisti DI.
+
+Prašau:
+Sukurk pilną projekto struktūrą (kodą + Dockerfile + config).
+
+
+Parašyk aiškias instrukcijas, kaip man:
+
+ – susikurti Railway projektą
+
+ – įkelti kodą
+
+ – suvesti env kintamuosius
+
+ – prijungti BotFather tokeną
+
+
+Padaryk, kad viskas būtų kuo paprasčiau paleidžiama žmogui, kuris nėra programuotojas.                                                               ВСЁ
